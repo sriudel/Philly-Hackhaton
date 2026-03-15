@@ -5,8 +5,10 @@ import BusinessDashboard from './pages/BusinessDashboard'
 import ArtistFeed from './pages/ArtistFeed'
 import PostGig from './pages/PostGig'
 
-// TODO: replace with real auth state from Supabase
-const useAuth = () => ({ user: null, role: null })
+// DEMO MODE — swap role to 'artist' or 'business' to preview that view
+// TODO: replace with real Supabase auth session
+const DEMO_ROLE = 'business' // 👈 change to 'artist' to see Artist Feed
+const useAuth = () => ({ user: DEMO_ROLE ? { id: 'demo' } : null, role: DEMO_ROLE })
 
 function ProtectedRoute({ children, requiredRole }) {
   const { user, role } = useAuth()

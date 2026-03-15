@@ -1,231 +1,211 @@
-# LocalStage
+# LocalStage 🎸
 
-**A two-sided marketplace connecting local artists with Philly businesses.**
-
+A two-sided marketplace connecting local Philly artists with local businesses.
 Artists browse gigs. Businesses find talent. Matching is powered by OpenAI embeddings — not keyword search.
+
+---
+
+## What each user sees
+
+**Business owner** → `/business`
+- Dashboard with active gigs + applicant count
+- AI-recommended artists ranked by match score
+- Post a Gig form — describe what you need, we match the right talent
+
+**Artist** → `/artist`
+- Feed of open gigs ranked by how well they fit your profile
+- Match score on each card
+- One-click apply
 
 ---
 
 ## Architecture
 
 ```
-┌─────────────────────┐       ┌──────────────────────┐
-│   React + Vite      │──────▶│   FastAPI (Python)   │
-│   Tailwind CSS      │  HTTP │   Uvicorn             │
-│   localhost:5173    │       │   localhost:8000       │
-└─────────────────────┘       └──────────┬───────────┘
-                                          │
-                               ┌──────────▼───────────┐
-                               │  Supabase            │
-                               │  ├─ Postgres         │
-                               │  ├─ pgvector         │
-                               │  └─ Auth (JWT)       │
-                               └──────────────────────┘
-                                          │
-                               ┌──────────▼───────────┐
-                               │  OpenAI API          │
-                               │  text-embedding-3-   │
-                               │  small (1536-dim)    │
-                               └──────────────────────┘
+frontend/     React + Vite + Tailwind   → runs on http://localhost:5173
+backend/      FastAPI + Uvicorn         → runs on http://localhost:8000
+db/           Supabase Postgres + pgvector (hosted, no local DB needed)
 ```
 
-### How matching works
+**How matching works:**
+1. Artist saves profile → backend embeds bio + skills via OpenAI
+2. Business posts gig → backend embeds title + description via OpenAI
+3. Artist opens feed → backend finds gigs by cosine similarity to artist's vector
+4. Results ranked by score, no keywords involved
 
-1. When an artist creates/updates their profile, the backend generates an embedding from their bio + skills + category.
-2. When a business posts a gig, the backend generates an embedding from the title + description.
-3. Both vectors are stored in Supabase using the `pgvector` extension.
-4. When an artist opens their feed, the backend queries `match_gigs()` — a Postgres function that returns gigs ordered by cosine similarity to the artist's embedding.
-5. When a business views recommended artists, the backend calls `match_artists()` similarly.
+---
 
-No keyword matching, no tags — just semantic similarity.
+## Teammate Setup (no Docker)
+
+### Step 1 — Get the code
+
+```bash
+# First time — clone the repo
+git clone https://github.com/daniyar-udel/Philly-Hackhaton.git
+cd Philly-Hackhaton
+
+# Switch to the working branch
+git checkout feat/localstage-scaffold
+```
+
+```bash
+# Already cloned? Pull latest:
+git fetch origin
+git checkout feat/localstage-scaffold
+git pull origin feat/localstage-scaffold
+```
+
+---
+
+### Step 2 — Run the Frontend
+
+**Check if you have Node.js:**
+```bash
+node --version   # need v18 or higher
+```
+
+**Don't have it? Install:**
+```bash
+# Mac
+brew install node
+
+# Windows → download LTS from https://nodejs.org
+```
+
+**Start the app:**
+```bash
+cd frontend
+npm install
+cp .env.example .env      # fill in Supabase keys (get from teammate who set up DB)
+npm run dev
+```
+
+Open → **http://localhost:5173**
+
+> **Preview without keys:** open `frontend/src/App.jsx`, find `DEMO_ROLE` at the top,
+> set it to `'business'` or `'artist'`. The app will skip login and go straight to that view.
+
+---
+
+### Step 3 — Run the Backend
+
+**Check Python version:**
+```bash
+python3 --version   # need 3.11 or higher
+```
+
+```bash
+cd backend
+
+# Create a virtual environment
+python3 -m venv venv
+
+# Activate it
+source venv/bin/activate      # Mac / Linux
+venv\Scripts\activate         # Windows
+
+# Install packages
+pip install -r requirements.txt
+
+# Set up env
+cp .env.example .env          # fill in keys (see below)
+
+# Start the server
+uvicorn main:app --reload --port 8000
+```
+
+Swagger API docs → **http://localhost:8000/docs**
+
+---
+
+### Step 4 — Database (one person does this once)
+
+1. Create a free project at https://supabase.com
+2. Go to **SQL Editor → New Query**
+3. Paste the full contents of `db/schema.sql` and click Run
+4. Go to **Settings → API** and grab:
+   - Project URL → share as `SUPABASE_URL`
+   - `anon` key → share as `SUPABASE_ANON_KEY` (frontend)
+   - `service_role` key → share as `SUPABASE_SERVICE_KEY` (backend, keep secret)
+
+---
+
+## Environment Variables
+
+**`backend/.env`** (copy from `backend/.env.example`)
+```
+SUPABASE_URL=https://xxxx.supabase.co
+SUPABASE_SERVICE_KEY=eyJ...
+OPENAI_API_KEY=sk-...
+JWT_SECRET=your-supabase-jwt-secret
+ENVIRONMENT=development
+```
+
+**`frontend/.env`** (copy from `frontend/.env.example`)
+```
+VITE_SUPABASE_URL=https://xxxx.supabase.co
+VITE_SUPABASE_ANON_KEY=eyJ...
+VITE_API_BASE_URL=http://localhost:8000
+```
+
+---
+
+## Git Workflow
+
+```bash
+# Start a new feature
+git checkout feat/localstage-scaffold   # our base branch
+git pull origin feat/localstage-scaffold
+git checkout -b feat/your-feature
+
+# Commit and push
+git add .
+git commit -m "feat: describe what you built"
+git push origin feat/your-feature
+
+# Open a PR on GitHub targeting feat/localstage-scaffold (not main)
+```
+
+**Branch naming:** `feat/thing-you-built`, `fix/bug-you-fixed`
+
+---
+
+## Build Order
+
+| Priority | Task | File(s) |
+|----------|------|---------|
+| 1 | Set up Supabase + run schema.sql | `db/schema.sql` |
+| 2 | Wire backend auth to Supabase | `backend/routes/auth.py` |
+| 2 | Wire frontend login to Supabase | `frontend/src/App.jsx`, `pages/Login.jsx` |
+| 3 | Gig CRUD (create, list, view) | `backend/routes/gigs.py` |
+| 3 | Artist/Business profile upsert | `backend/routes/profiles.py` |
+| 4 | Generate embeddings on save | `backend/services/embeddings.py` |
+| 4 | pgvector match queries | `backend/services/matching.py` |
+| 5 | Wire real data into feed + dashboard | `pages/ArtistFeed.jsx`, `BusinessDashboard.jsx` |
+| 6 | Polish, loading states, error handling | everywhere |
+
+Search the codebase for `# TODO` to find every stub that needs real logic.
 
 ---
 
 ## Project Structure
 
 ```
-localstage/
-├── frontend/               # React + Vite + Tailwind
-│   ├── src/
-│   │   ├── components/     # Navbar (shared UI)
-│   │   ├── pages/          # Login, BusinessDashboard, ArtistFeed, PostGig
-│   │   ├── App.jsx         # Routes + auth guard
-│   │   ├── main.jsx
-│   │   └── index.css       # Tailwind imports
-│   ├── index.html
-│   ├── package.json
-│   ├── vite.config.js      # Proxy /api → localhost:8000
-│   ├── tailwind.config.js
-│   └── .env.example
-│
-├── backend/                # FastAPI + Uvicorn
-│   ├── main.py             # App entry, CORS, router registration
-│   ├── routes/
-│   │   ├── auth.py         # POST /auth/signup, /auth/login, /auth/logout
-│   │   ├── gigs.py         # CRUD for gigs
-│   │   ├── profiles.py     # Artist + business profile upsert
-│   │   └── match.py        # Vector similarity endpoints
-│   ├── services/
-│   │   ├── embeddings.py   # OpenAI embedding generation
-│   │   └── matching.py     # pgvector query helpers
-│   ├── models/
-│   │   ├── gig.py          # Pydantic models
-│   │   └── profile.py
-│   ├── db/
-│   │   └── client.py       # Supabase client singleton
-│   ├── requirements.txt
-│   └── .env.example
-│
-└── db/
-    └── schema.sql          # Supabase-ready Postgres schema + pgvector setup
+frontend/
+  src/
+    components/     Navbar
+    pages/          Login, BusinessDashboard, ArtistFeed, PostGig
+    App.jsx         Routes + auth (set DEMO_ROLE here to preview UI)
+    main.jsx
+
+backend/
+  main.py           FastAPI app entry, CORS, router registration
+  routes/           auth.py  gigs.py  profiles.py  match.py
+  services/         embeddings.py (OpenAI)  matching.py (pgvector)
+  models/           gig.py  profile.py
+  db/               client.py (Supabase singleton)
+  requirements.txt
+
+db/
+  schema.sql        All tables + pgvector indexes + RPC match functions
 ```
-
----
-
-## Setup
-
-### Prerequisites
-
-- Node.js 18+
-- Python 3.11+
-- A [Supabase](https://supabase.com) project (free tier works)
-- An [OpenAI](https://platform.openai.com) API key
-
----
-
-### 1. Database
-
-1. Create a new Supabase project.
-2. In the Supabase dashboard, go to **SQL Editor → New Query**.
-3. Paste and run `db/schema.sql`.
-4. Confirm the `vector` extension is enabled (Dashboard → Database → Extensions → search "vector").
-
----
-
-### 2. Backend
-
-```bash
-cd backend
-
-# Create virtual environment
-python -m venv venv
-source venv/bin/activate      # Windows: venv\Scripts\activate
-
-# Install dependencies
-pip install -r requirements.txt
-
-# Configure environment
-cp .env.example .env
-# Fill in SUPABASE_URL, SUPABASE_SERVICE_KEY, OPENAI_API_KEY, JWT_SECRET
-
-# Run dev server
-uvicorn main:app --reload --port 8000
-```
-
-API docs available at: http://localhost:8000/docs
-
----
-
-### 3. Frontend
-
-```bash
-cd frontend
-
-# Install dependencies
-npm install
-
-# Configure environment
-cp .env.example .env
-# Fill in VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY
-
-# Run dev server
-npm run dev
-```
-
-App available at: http://localhost:5173
-
----
-
-## API Overview
-
-| Method | Path | Description |
-|--------|------|-------------|
-| POST | `/auth/signup` | Register user (artist or business) |
-| POST | `/auth/login` | Login, returns Supabase session |
-| GET | `/gigs/` | List gigs (filter by business_id, category) |
-| POST | `/gigs/` | Create gig + generate embedding |
-| GET | `/profiles/artist/{user_id}` | Get artist profile |
-| PUT | `/profiles/artist/{user_id}` | Upsert artist profile + re-embed |
-| GET | `/match/gigs?artist_id=` | Top gigs for an artist (vector search) |
-| GET | `/match/artists?gig_id=` | Top artists for a gig (vector search) |
-
----
-
-## Git Workflow
-
-We use a feature branch model. Main branch is always deployable.
-
-```
-main
-├── feat/auth           # Supabase auth integration
-├── feat/gig-crud       # Gig creation and listing
-├── feat/embeddings     # OpenAI embedding + pgvector matching
-├── feat/artist-feed    # Artist feed UI
-└── feat/business-dash  # Business dashboard UI
-```
-
-**Branch naming:** `feat/<short-description>`, `fix/<short-description>`
-
-**Commit style:** `feat: add gig creation endpoint`, `fix: correct CORS headers`
-
-**PR process:** branch → PR → one review → squash merge to main
-
----
-
-## Build Order (Recommended for Hackathon)
-
-Work these in parallel across teammates:
-
-| Priority | Task | Owner |
-|----------|------|-------|
-| 1 | Database schema + Supabase project setup | — |
-| 2 | Backend auth routes (signup/login) | — |
-| 2 | Frontend login page + Supabase client wiring | — |
-| 3 | Gig CRUD (backend routes + frontend PostGig) | — |
-| 3 | Artist/Business profile upsert | — |
-| 4 | Embedding generation on gig create + profile save | — |
-| 4 | pgvector match queries (Supabase RPC) | — |
-| 5 | Wire match results into BusinessDashboard + ArtistFeed | — |
-| 6 | Polish, error states, loading spinners | — |
-
----
-
-## Environment Variables
-
-### Backend (`backend/.env`)
-
-| Variable | Description |
-|----------|-------------|
-| `SUPABASE_URL` | Your Supabase project URL |
-| `SUPABASE_SERVICE_KEY` | Service role key (bypasses RLS — keep secret) |
-| `OPENAI_API_KEY` | OpenAI API key |
-| `JWT_SECRET` | Supabase JWT secret (for verifying tokens) |
-
-### Frontend (`frontend/.env`)
-
-| Variable | Description |
-|----------|-------------|
-| `VITE_SUPABASE_URL` | Your Supabase project URL |
-| `VITE_SUPABASE_ANON_KEY` | Supabase anon/public key (safe for client) |
-
----
-
-## TODOs (search the codebase for `# TODO`)
-
-Key ones to implement first:
-- `backend/routes/auth.py` — wire up Supabase auth calls
-- `backend/routes/match.py` — call `services/matching.py` with real embeddings
-- `backend/services/matching.py` — implement Supabase RPC calls
-- `frontend/src/App.jsx` — replace mock `useAuth` with real Supabase session
-- `frontend/src/pages/ArtistFeed.jsx` — fetch from `/match/gigs`
-- `frontend/src/pages/BusinessDashboard.jsx` — fetch from `/match/artists`
